@@ -1,50 +1,94 @@
-# PulsePal API Keys / Secrets Checklist
+# PulsePal Keys, URLs, and Access You Must Have
 
-## Required for demo
+This is the exact checklist for what you need to collect before final integration.
 
-1. **Gemini API key**
-   - Env: `GEMINI_API_KEY`
-   - Used by: extractor + responder + daily pattern prompts
+## 1) Required secrets (must have)
 
-2. **Airia credentials**
-   - Env examples: `AIRIA_BASE_URL`, `AIRIA_AGENT_ID_MESSAGE`, `AIRIA_AGENT_ID_DAILY`, `AIRIA_API_KEY`
-   - Used by: orchestrated agent calls from backend
+1. `GEMINI_API_KEY`
+   - Needed for extractor/responder/daily pattern prompts.
+   - If Gemini is configured inside Airia only, you may still keep this as backend fallback.
 
-## Optional (Phase 2)
+2. `AIRIA_API_KEY`
+   - Used by backend to invoke Airia agents.
 
-3. **Modulate API key**
-   - Env: `MODULATE_API_KEY`
-   - Used by: voice moderation flags before transcript persistence
+3. `AIRIA_AGENT_ID_MESSAGE`
+   - Agent ID for `MessagePipelineAgent`.
 
-4. **Speech-to-Text provider key** (if needed)
-   - Env example: `GOOGLE_STT_API_KEY`
-   - Used by: voice check-in transcription pipeline
+4. `AIRIA_AGENT_ID_DAILY`
+   - Agent ID for `DailyReviewAgent`.
 
-## Backend runtime keys
+---
 
-5. **JWT/app secret**
-   - Env: `APP_SECRET`
-   - Used by: token signing (replace current hackathon token table)
+## 2) Required URLs/links (must have)
 
-6. **Database URL**
-   - Env: `DATABASE_URL`
-   - Default now: local sqlite file for speed
+1. `AIRIA_BASE_URL`
+   - Example format: `https://<your-airia-domain>`
 
-## Fast env file template
+2. `BACKEND_PUBLIC_URL`
+   - Needed if Airia tools call your backend endpoints directly.
+   - If not exposing backend as tools yet, still useful for debugging and demo.
+
+3. (Optional but recommended) `FRONTEND_DEMO_URL`
+   - For judge handoff and demo reliability.
+
+---
+
+## 3) Runtime/app secrets
+
+1. `APP_SECRET`
+   - For stronger auth/session signing (future hardening).
+
+2. `DATABASE_URL`
+   - For SQLite/Postgres selection.
+
+3. `INTERNAL_API_KEY`
+   - Shared secret for Airia tool calls into backend `/internal/*` endpoints.
+
+---
+
+## 4) Optional sponsor integrations (Phase 2)
+
+1. `MODULATE_API_KEY`
+   - Voice moderation/safety.
+
+2. `GOOGLE_STT_API_KEY` (or equivalent)
+   - Voice-to-text transcription.
+
+---
+
+## 5) Minimal .env template
 
 ```bash
+# Core
 GEMINI_API_KEY=
 AIRIA_BASE_URL=
 AIRIA_API_KEY=
 AIRIA_AGENT_ID_MESSAGE=
 AIRIA_AGENT_ID_DAILY=
-MODULATE_API_KEY=
-GOOGLE_STT_API_KEY=
+
+# Runtime
 APP_SECRET=change-me
 DATABASE_URL=sqlite:///backend/pulsepal.db
+INTERNAL_API_KEY=
+
+# Optional
+BACKEND_PUBLIC_URL=
+FRONTEND_DEMO_URL=
+MODULATE_API_KEY=
+GOOGLE_STT_API_KEY=
 ```
 
-## Security shortcut notes
+---
 
-- For the hackathon, `.env` local + one shared demo account is acceptable.
-- Before production: rotate keys, add vault, and remove plain token table auth.
+## 6) What to share with me (or any integrator) to finish quickly
+
+Provide these values/links and integration can be finished fast:
+
+- Airia base URL
+- Airia message agent ID
+- Airia daily agent ID
+- Confirmation whether Gemini is called from Airia only or also backend fallback
+- Backend public URL (if using Airia tools hitting backend)
+- Modulate key + endpoint docs (only if voice is in scope now)
+
+Do **not** paste actual secret values in chat logs; use `.env` locally.

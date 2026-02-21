@@ -47,6 +47,20 @@ For judge demo:
 
 - `GET /health` returns which integrations are configured (Gemini/Airia IDs/keys).
 
+
+## Internal tool endpoints (for Airia tools)
+
+Set `INTERNAL_API_KEY` in backend env, then Airia tools can call:
+
+- `POST /internal/user/context`
+- `POST /internal/message/save`
+- `POST /internal/events/save`
+- `POST /internal/memory/merge`
+- `POST /internal/daily/save`
+- `POST /internal/demo/seed`
+
+Send header: `x-internal-key: <INTERNAL_API_KEY>`.
+
 ## Repo layout
 
 - `backend/app.py` – routes, db schema, and pipeline orchestration

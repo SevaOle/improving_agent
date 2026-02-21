@@ -15,6 +15,8 @@ class IntegrationConfig:
         self.airia_api_key = os.getenv("AIRIA_API_KEY", "")
         self.airia_agent_id_message = os.getenv("AIRIA_AGENT_ID_MESSAGE", "")
         self.airia_agent_id_daily = os.getenv("AIRIA_AGENT_ID_DAILY", "")
+        self.internal_api_key = os.getenv("INTERNAL_API_KEY", "")
+        self.llm_timeout_s = int(os.getenv("LLM_TIMEOUT_S", "8"))
 
 
 CONFIG = IntegrationConfig()
@@ -24,9 +26,10 @@ class IntegrationError(Exception):
     pass
 
 
-def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str], timeout_s: int = 8) -> dict[str, Any]:
+def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str], timeout_s: int | None = None) -> dict[str, Any]:
+    actual_timeout = timeout_s if timeout_s is not None else CONFIG.llm_timeout_s
     try:
-        response = httpx.post(url, headers=headers, json=payload, timeout=timeout_s)
+        response = httpx.post(url, headers=headers, json=payload, timeout=actual_timeout)
         response.raise_for_status()
         return response.json()
     except Exception as exc:
