@@ -1,57 +1,215 @@
-# Airia To-Do (Fast Hackathon Version)
+# Airia Setup Guide (Step-by-step, Hackathon Friendly)
 
-## 1) Create two Airia agents
+This is the practical setup path for **PulsePal + Airia + Gemini**.
 
-- `MessagePipelineAgent`
-- `DailyReviewAgent`
+## TL;DR architecture decision
 
-## 2) Wire tool endpoints (backend)
+**Use your backend DB (SQLite/Postgres), not Airia as your primary database.**
 
-Use these backend operations as tool calls from Airia:
+Why:
+- You already have tables and API routes in FastAPI.
+- You control timeline/insights queries directly.
+- If Airia is down, app can still run on fallback logic.
 
-- `db.get_user_context(user_id)`
-- `db.save_message(user_id, role, content, source)`
-- `db.save_events(user_id, source_message_id, events)`
-- `db.merge_user_memory(user_id, patch)`
-- `db.save_daily_report(user_id, report_json)`
-- `db.post_assistant_message(user_id, content)`
+So Airia is the **orchestrator layer**, not your source-of-truth storage.
 
-> Hackathon shortcut: keep these as internal backend functions at first, then expose as Airia tools only for final demo.
+---
 
-## 3) MessagePipelineAgent flow
+## 1) What you need ready before Airia config
 
-1. Receive `user_id + text`
-2. Pull context (last 10 messages, last daily report, memory)
-3. Call Gemini Extractor prompt
-4. Validate strict JSON schema
-5. Persist events + memory patch
-6. Call Gemini Responder prompt
-7. Persist assistant message
-8. Return `{reply, follow_up_questions, suggested_actions, risk_level}`
+- Running backend URL (local tunnel or deployed), e.g.:
+  - `https://<your-backend-host>`
+- At least one user in DB (or use `POST /auth/demo`).
+- Gemini key in backend env (`GEMINI_API_KEY`) or Gemini configured inside Airia.
 
-## 4) DailyReviewAgent flow
+---
 
-1. Trigger daily at 9PM user local time (or manual button)
-2. Load last 30 days events/messages/feedback
-3. Calculate deterministic metrics first (frequency, co-occurrence)
-4. Ask Gemini for pattern narrative + tomorrow questions
-5. Save daily report and memory patch
-6. Post a short check-in message for next day
+## 2) Create exactly 2 agents in Airia
 
-## 5) Airia demo checklist
+## Agent A: `MessagePipelineAgent`
 
-- [ ] Endpoint from app routes to Airia agent URL
-- [ ] Agent logs visible for judges
-- [ ] One-user demo account pre-seeded with event history
-- [ ] Manual button in app calls `/daily/run` for instant wow moment
-- [ ] Keep failure fallback: if Airia fails, return local mock responder
+### Input contract
 
-## 6) Fallback strategy for hackathon reliability
+```json
+{
+  "user_id": 123,
+  "content": "I feel dizzy today and slept poorly",
+  "source": "text"
+}
+```
 
-- Timeout Airia/Gemini at 8s.
-- If timeout/failure:
-  - save user message anyway
-  - run local fallback extraction and response
-  - mark run as `fallback=true` in logs
+### Job it should do
 
-This guarantees the demo never freezes.
+1. Load user context from backend:
+   - memory
+   - last 10 messages
+   - recent events
+   - latest daily report
+2. Run **Extractor** prompt (Gemini):
+   - return structured `events`, `risk_flags`, `memory_patch`.
+3. Persist extraction:
+   - save events
+   - merge memory patch
+4. Run **Responder** prompt (Gemini):
+   - return `reply`, follow-up questions, suggested actions, risk level.
+5. Persist assistant reply message.
+6. Return response payload to backend/app.
+
+### Output contract
+
+```json
+{
+  "reply": "string",
+  "follow_up_questions": ["..."],
+  "suggested_actions": ["..."],
+  "risk_level": "low|medium|high",
+  "safety_footer": "string",
+  "extracted": {
+    "events": [],
+    "risk_flags": [],
+    "memory_patch": {}
+  }
+}
+```
+
+---
+
+## Agent B: `DailyReviewAgent`
+
+### Input contract
+
+```json
+{
+  "user_id": 123,
+  "days": 30
+}
+```
+
+### Job it should do
+
+1. Load last 30 days of events/messages/feedback.
+2. Compute simple deterministic metrics first (frequency/co-occurrence).
+3. Run daily pattern analysis prompt (Gemini).
+4. Return:
+   - pattern summary
+   - non-diagnostic suggestions
+   - tomorrow check-in questions
+   - check-in message text
+   - memory patch
+5. Persist report + post check-in assistant message.
+
+### Output contract
+
+```json
+{
+  "pattern_summary": ["..."],
+  "what_changed": ["..."],
+  "suggested_next_steps": ["..."],
+  "tomorrow_questions": ["..."],
+  "check_in_message": "...",
+  "risk_level": "low|medium|high",
+  "memory_patch": {}
+}
+```
+
+---
+
+## 3) Tool/API boundaries (who does what)
+
+## Backend responsibilities (source of truth)
+- Users/auth/tokens
+- Message storage
+- Events storage
+- User memory merge + storage
+- Daily report storage
+- Timeline/insights query APIs
+
+## Airia responsibilities
+- Agent sequencing/workflows
+- Calling Gemini with your prompts
+- Returning validated JSON payloads
+
+---
+
+## 4) How backend sends data through Airia
+
+Your backend should call Airia agent invoke endpoint with:
+
+- `AIRIA_BASE_URL`
+- `AIRIA_API_KEY`
+- `AIRIA_AGENT_ID_MESSAGE`
+- `AIRIA_AGENT_ID_DAILY`
+
+Current code path already does this in `backend/integrations.py` and `backend/app.py`.
+
+Example call shape used by backend:
+
+```json
+{
+  "mode": "extract",
+  "user_message": "...",
+  "user_memory_json": {},
+  "recent_events": [],
+  "recent_messages": []
+}
+```
+
+and later:
+
+```json
+{
+  "mode": "respond",
+  "user_message": "...",
+  "extracted": {},
+  "user_memory_json": {},
+  "recent_messages": [],
+  "daily_report": {}
+}
+```
+
+---
+
+## 5) Step-by-step to configure in Airia UI
+
+1. Create `MessagePipelineAgent`.
+2. Set model provider to Gemini.
+3. Add prompt instructions for extractor + responder (or two subflows if supported).
+4. Ensure strict JSON output per contract.
+5. Save and copy agent ID -> put in `.env` as `AIRIA_AGENT_ID_MESSAGE`.
+6. Create `DailyReviewAgent`.
+7. Add daily-analysis prompt + output schema.
+8. Save and copy agent ID -> `.env` as `AIRIA_AGENT_ID_DAILY`.
+9. In backend `.env`, set:
+   - `AIRIA_BASE_URL`
+   - `AIRIA_API_KEY`
+   - both agent IDs
+10. Restart backend and verify:
+    - `GET /health` shows Airia configured flags true.
+    - `POST /chat/send` returns `pipeline.extractor_provider = "airia"`.
+
+---
+
+## 6) Which URLs/links you need to provide
+
+You should have these ready:
+
+1. **Backend public URL** (for Airia tools/webhooks if needed)
+2. **Airia workspace/base URL**
+3. **Airia Agent IDs** (`message`, `daily`)
+4. (Optional) **Frontend app URL** for demo
+5. (Optional) **Modulate endpoint URL** when voice is added
+
+If your backend runs locally, use a tunnel (e.g., ngrok/cloudflared) and keep URL stable during judging.
+
+---
+
+## 7) Reliability rules for hackathon demo
+
+- Set 8s timeout on Airia/Gemini calls.
+- On failure:
+  - still store user message
+  - run local fallback extraction/responder
+  - return response with `pipeline.*_provider = "fallback"`
+- Keep one seeded demo user for predictable results.
+
+This guarantees your demo remains responsive even if sponsor APIs wobble.
